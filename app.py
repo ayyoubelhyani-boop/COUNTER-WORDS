@@ -22,6 +22,29 @@ st.markdown("""
     .stat-value { font-size: 2.2rem; font-weight: 700; color: #1a56db; }
     .stat-label { font-size: 0.82rem; color: #6b7280; margin-top: 4px; letter-spacing: 0.03em; text-transform: uppercase; }
     .stProgress > div > div { background-color: #1a56db; }
+    .word-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 12px;
+        border-radius: 8px;
+        margin-bottom: 4px;
+        background: #f9fafb;
+        font-size: 0.95rem;
+    }
+    .word-row:nth-child(odd) { background: #f0f4ff; }
+    .word-name { font-weight: 600; color: #111827; }
+    .word-count { color: #1a56db; font-weight: 700; }
+    .page-item {
+        padding: 6px 12px;
+        background: #f9fafb;
+        border-radius: 8px;
+        margin-bottom: 4px;
+        font-size: 0.88rem;
+        color: #374151;
+        word-break: break-all;
+    }
+    .page-item:nth-child(odd) { background: #f0f4ff; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -33,7 +56,13 @@ HEADERS = {
     )
 }
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+STOP_WORDS = {
+    "the","a","an","and","or","but","in","on","at","to","for","of","with",
+    "is","it","its","be","was","are","were","as","by","from","that","this",
+    "have","has","had","not","he","she","they","we","you","i","do","did",
+    "will","would","can","could","what","which","who","their","if","so","about"
+}
+
 def get_domain(url):
     p = urlparse(url)
     return p.scheme + "://" + p.netloc
@@ -67,11 +96,26 @@ def count_words(text):
 def stat(value, label):
     return f'<div class="stat-box"><div class="stat-value">{value}</div><div class="stat-label">{label}</div></div>'
 
+def render_top_words(freq, n=20):
+    st.subheader("Most repeated words")
+    rows = ""
+    for word, count in freq.most_common(n):
+        if word not in STOP_WORDS:
+            rows += f'<div class="word-row"><span class="word-name">{word}</span><span class="word-count">{count:,}</span></div>'
+    st.markdown(rows, unsafe_allow_html=True)
+
+def render_pages(visited, base_domain):
+    st.subheader(f"Crawled pages ({len(visited)})")
+    rows = ""
+    for page in sorted(visited):
+        short = page.replace(base_domain, "") or "/"
+        rows += f'<div class="page-item">🔗 {short}</div>'
+    st.markdown(rows, unsafe_allow_html=True)
+
 # ── UI ─────────────────────────────────────────────────────────────────────────
 st.title("🕷️ Web Word Crawler")
 
 mode = st.segmented_control("", ["Single page", "Full website"], default="Single page")
-
 url_input = st.text_input("", placeholder="https://example.com", label_visibility="collapsed")
 
 if mode == "Full website":
@@ -79,7 +123,6 @@ if mode == "Full website":
 
 run = st.button("Analyse", type="primary", use_container_width=True)
 
-# ── Single page ────────────────────────────────────────────────────────────────
 if run:
     if not url_input.strip():
         st.warning("Please enter a URL.")
@@ -89,6 +132,7 @@ if run:
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
 
+    # ── Single page ────────────────────────────────────────────────────────────
     if mode == "Single page":
         with st.spinner("Fetching page..."):
             html = fetch(url)
@@ -105,6 +149,9 @@ if run:
         c1.markdown(stat(f"{len(words):,}", "Total words"), unsafe_allow_html=True)
         c2.markdown(stat(f"{len(freq):,}", "Unique words"), unsafe_allow_html=True)
 
+        st.divider()
+        render_top_words(freq)
+
     # ── Full crawl ─────────────────────────────────────────────────────────────
     else:
         base_domain = get_domain(url)
@@ -112,7 +159,6 @@ if run:
 
         st.divider()
         progress_bar = st.progress(0, text="Starting crawl...")
-        status       = st.empty()
 
         while queue and len(visited) < max_pages:
             current = queue.pop(0)
@@ -120,8 +166,10 @@ if run:
                 continue
 
             visited.add(current)
-            progress_bar.progress(len(visited) / max_pages,
-                                  text=f"Crawling page {len(visited)} of {max_pages}…")
+            progress_bar.progress(
+                len(visited) / max_pages,
+                text=f"Crawling page {len(visited)} of {max_pages} — {current.replace(base_domain,'') or '/'}"
+            )
 
             html = fetch(current)
             if html:
@@ -144,3 +192,10 @@ if run:
         c1.markdown(stat(f"{len(visited):,}", "Pages crawled"), unsafe_allow_html=True)
         c2.markdown(stat(f"{len(all_words):,}", "Total words"),  unsafe_allow_html=True)
         c3.markdown(stat(f"{len(freq):,}",      "Unique words"), unsafe_allow_html=True)
+
+        st.divider()
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            render_top_words(freq)
+        with col2:
+            render_pages(visited, base_domain)
